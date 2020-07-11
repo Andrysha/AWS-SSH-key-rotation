@@ -17,7 +17,7 @@ def get_ssh_users(s3_ref):
 
     # Retrieve users
     data = s3_ref.select_object_content(
-        Bucket='bm-prod-ssh-keys',
+        Bucket='s3-bucket',
         Key='users.csv',
         ExpressionType='SQL',
         Expression='select * from s3object',
@@ -47,7 +47,7 @@ def get_private_key():
 
     client = boto3.client('secretsmanager')
     try:
-        response = client.get_secret_value(SecretId='bm/prod/lambda')
+        response = client.get_secret_value(SecretId='secret')
     except ClientError as error:
         raise error
     else:
@@ -64,7 +64,7 @@ def get_public_key(user):
     """ Function to retrieve user's public key """
 
     s3 = boto3.resource('s3')
-    obj = s3.Object('bm-prod-ssh-keys', '{}/prod_nat01_{}.pub'.format(
+    obj = s3.Object('s3-bucket', '{}/jump_host_name_{}.pub'.format(
         user['aws_username'], user['linux_username']))
     public_key = obj.get()['Body'].read().decode('utf-8')
     return public_key
@@ -83,7 +83,7 @@ def send_email(user):
 
     SMTP_PORT = 587
     SMTP_SERVER = 'email-smtp.us-east-1.amazonaws.com'
-    SENDER = 'no-reply@poweredbyhackett.com'
+    SENDER = 'no-reply@yourdomain.com'
 
     # Retrieve SMTP credentials
     client = boto3.client('secretsmanager')
@@ -99,7 +99,7 @@ def send_email(user):
 
     # Generate to, from and subject
     message = MIMEMultipart('mixed')
-    message['Subject'] = 'BM-PROD SSH key rotation - {}'.format(
+    message['Subject'] = 'SSH key rotation - {}'.format(
         user['linux_username'])
     message['From'] = SENDER
     message['To'] = user['email']
@@ -114,14 +114,13 @@ def send_email(user):
             <ol type="1">
                 <li>Login to AWS console.</li>
                 <li>Navigate to S3 service.</li>
-                <li>Download prod_nat01_{0} file  from bm-prod-ssh-keys/{1}
+                <li>Download jump_host_name_{0} file  from s3-bucket/{1}
                 S3 bucket.</li>
                 <li>Modify DBeaver benchmark production connection to use
                 newly downloaded key. See attachment for detailed
                 instructions.</li>
             </ol>
-            <p>For any questions or issues please contact
-            klearn@thehackettgroup.com or abokalo@thehackettgroup.com.</p>
+            <p>For any questions or issues please contact.</p>
          </body>
     </html>'''.format(user['linux_username'], user['aws_username'])
     body = MIMEText(html, 'html')
@@ -129,9 +128,9 @@ def send_email(user):
 
     # Add instructions attachment
     s3 = boto3.client('s3')
-    s3.download_file('bm-prod-ssh-keys', 'dbeaver_ssh_tunnel_settings.pdf',
-        '/tmp/dbeaver_ssh_tunnel_settings.pdf')
-    filename='/tmp/dbeaver_ssh_tunnel_settings.pdf'
+    s3.download_file('s3-bucket', 'ssh_tunnel_settings.pdf',
+        '/tmp/ssh_tunnel_settings.pdf')
+    filename='/tmp/ssh_tunnel_settings.pdf'
     with open(filename, 'rb') as pdf:
         attachment = MIMEApplication(pdf.read())
         #attachment = MIMEApplication(pdf.read(), Name='{}'.format(filename))
@@ -150,9 +149,9 @@ def send_email(user):
 def lambda_handler(event, context):
     """ Lambda handler function to generate putty private key """
 
-    # Establish SSH session to nat01
+    # Establish SSH session to jump_host_name
     private_key = get_private_key()
-    ssh = create_ssh_client('nat01', 'abokalo', private_key)
+    ssh = create_ssh_client('jump_host_name', 'username', private_key)
 
     s3 = boto3.client('s3')
     users = get_ssh_users(s3)
@@ -176,8 +175,8 @@ def lambda_handler(event, context):
                 'authorized_keys"'.format(user['linux_username']))
             ssh.exec_command(chmod_cmd)
         send_email(user)
-    # Close SSH session to nat01
+    # Close SSH session to jump_host_name
     ssh.close()
 
     # Remove instructions file
-    os.remove('/tmp/dbeaver_ssh_tunnel_settings.pdf')
+    os.remove('/tmp/ssh_tunnel_settings.pdf')

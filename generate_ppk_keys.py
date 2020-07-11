@@ -9,7 +9,7 @@ def retrieve_ssh_users(s3_ref):
 
     # Retrieve users
     data = s3_ref.select_object_content(
-        Bucket='bm-prod-ssh-keys',
+        Bucket='s3-bucket',
         Key='users.csv',
         ExpressionType='SQL',
         Expression='select * from s3object',
@@ -41,12 +41,12 @@ def lambda_handler(event, context):
     users = retrieve_ssh_users(s3)
 
     for user in users:
-        s3.download_file('bm-prod-ssh-keys', '{}/prod_nat01_{}'.format(
+        s3.download_file('s3-bucket', '{}/jump_host_name_{}'.format(
             user['aws_username'], user['linux_username']), '/tmp/id_rsa')
         subprocess.run(['./puttygen', '/tmp/id_rsa', '-o', '/tmp/id_rsa.ppk',
                 '-O', 'private'])
-        s3.upload_file('/tmp/id_rsa.ppk', 'bm-prod-ssh-keys',
-            '{}/prod_nat01_{}.ppk'.format(user['aws_username'],
+        s3.upload_file('/tmp/id_rsa.ppk', 's3-bucket',
+            '{}/jump_host_name_{}.ppk'.format(user['aws_username'],
             user['linux_username']))
 
     # Clean up lambda container
